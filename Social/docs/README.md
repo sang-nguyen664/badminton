@@ -130,3 +130,11 @@ Chay bang file batch:
 - Khong mo hai tien trinh cung su dung mot profile.
 - Khong dat `--concurrency` lon hon 2.
 - Tool thao tac tren UI Facebook, vi vay neu Facebook doi layout lon co the can cap nhat selector.
+
+## Nhat ky thay doi
+
+### 2026-08-13
+
+- Them Social Scheduler, cau hinh targets, assets, batch scripts va huong dan van hanh.
+- Loai bo thu muc du lieu runtime khoi repository; profile browser, logs va credential that tiep tuc duoc git ignore.
+- Xac nhan nhanh `main` san sang dong bo len remote sau khi commit tai lieu nay.
