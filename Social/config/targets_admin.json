@@ -1,0 +1,32 @@
+{
+  "targets": [
+    {
+      "id": "target-1",
+      "name": "NHÓM TUYỂN THÀNH VIÊN CỐ ĐỊNH - VÃNG LAI CẦU LÔNG",
+      "url": "https://www.facebook.com/groups/595867444292639/",
+      "type": "kiểm duyệt",
+      "enabled": true
+    },
+    {
+      "id": "target-2",
+      "name": "Hội Giao Lưu - Tập Chơi Cầu Lông",
+      "url": "https://www.facebook.com/groups/tapchoicaulong/",
+      "type": "kiểm duyệt",
+      "enabled": true
+    },
+    {
+      "id": "target-3",
+      "name": "Nhóm cầu lông Tân Phú-Bình Tân",
+      "url": "https://www.facebook.com/groups/1434732033983732/",
+      "type": "kiểm duyệt",
+      "enabled": true
+    },
+    {
+      "id": "target-4",
+      "name": "Nhóm Tuyển Thành Viên Vãng Lai, Cố Định Cầu Lông",
+      "url": "https://www.facebook.com/groups/tuyenthanhviencaulong/",
+      "type": "kiểm duyệt",
+      "enabled": true
+    }
+  ]
+}

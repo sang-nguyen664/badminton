@@ -1,0 +1,158 @@
+{
+  "targets": [
+    {
+      "id": "target-1",
+      "name": "HIỆP HỘI CẦU LÔNG HỒ CHÍ MINH ( CẦU LÔNG SÀI GÒN )",
+      "url": "https://www.facebook.com/groups/728387282609415/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-2",
+      "name": "Giao Lưu Cầu Lông TPHCM",
+      "url": "https://www.facebook.com/groups/chuyentrangcaulong/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-3",
+      "name": "Hội Giao Lưu Cầu Lông (Tuyển Vãng Lai - Tập Chơi Cầu Lông)",
+      "url": "https://www.facebook.com/groups/175858102243673/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-4",
+      "name": "NHÓM TUYỂN TV CỐ ĐỊNH - VÃNG LAI CẦU LÔNG",
+      "url": "https://www.facebook.com/groups/224943051860454/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-5",
+      "name": "Tuyển Cố Định - Vãng Lai Tp.HCM - Giao Lưu Cầu Lông",
+      "url": "https://www.facebook.com/groups/tuyencodinhvanglaigiaoluucaulong/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-6",
+      "name": "Hội Cầu Lông Tân Phú - Bình Tân",
+      "url": "https://www.facebook.com/groups/caulongtanphu/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-7",
+      "name": "Vãng Lai Cầu Lông Bình Tân - Tân Phú - Quận 6",
+      "url": "https://www.facebook.com/groups/3844636305860752/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-8",
+      "name": "HỘI CẦU LÔNG QUẬN BÌNH TÂN - TÂN PHÚ",
+      "url": "https://www.facebook.com/groups/411793021620792/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-9",
+      "name": "Hội Giao Lưu Cầu Lông (Tuyển Vãng Lai - Tập Chơi Cầu Lông)",
+      "url": "https://www.facebook.com/groups/hoigiaoluucaulong/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-10",
+      "name": "CLB Cầu Lông TP.HCM ( Tuyển Tv Vãng Lai + Cố Định )",
+      "url": "https://www.facebook.com/groups/clbcaulonghcm/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-11",
+      "name": "Hội Cầu Lông Vãn Lai Cố Định Hồ Chí Minh",
+      "url": "https://www.facebook.com/groups/1453687242692896/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-12",
+      "name": "TUYỂN THÀNH VIÊN CỐ ĐỊNH - VÃNG LAI CẦU LÔNG",
+      "url": "https://www.facebook.com/groups/374441818368347/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-13",
+      "name": "Tìm vãng lai, cố định sân cầu lông các quận tphcm",
+      "url": "https://www.facebook.com/groups/1120348945681617/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-14",
+      "name": "Hội Cầu Lông Vãng Lai Cố Định Hồ Chí Minh",
+      "url": "https://www.facebook.com/groups/1124818998838916/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-15",
+      "name": "Giao Lưu Cầu Lông - 403.7K",
+      "url": "https://www.facebook.com/groups/772007389277354/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-16",
+      "name": "Giao Lưu Cầu Lông - 383.9K",
+      "url": "https://www.facebook.com/groups/4261561847417255/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-17",
+      "name": "Giao lưu cầu lông TP.HCM",
+      "url": "https://www.facebook.com/groups/4149735245055558/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-18",
+      "name": "Giao Lưu Cầu Lông - 74.1K",
+      "url": "https://www.facebook.com/groups/245118398911808/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-19",
+      "name": "Giao Lưu Cầu Lông - 84.3K",
+      "url": "https://www.facebook.com/groups/tuyengiaoluucaulong/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-20",
+      "name": "NHÓM TUYỂN THÀNH VIÊN CỐ ĐỊNH, VÃNG LAI CẦU LÔNG",
+      "url": "https://www.facebook.com/groups/nhomcaulongtphcm/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-21",
+      "name": "Cộng Đồng Cầu Lông The B (Tuyển Vãng Lai - Giao Lưu Cầu Lông)",
+      "url": "https://www.facebook.com/groups/hoicaulongvn/",
+      "type": "công khai",
+      "enabled": true
+    },
+    {
+      "id": "target-22",
+      "name": "GIAO LƯU CẦU LÔNG",
+      "url": "https://www.facebook.com/groups/950648556615882/",
+      "type": "công khai",
+      "enabled": true
+    }
+  ]
+}

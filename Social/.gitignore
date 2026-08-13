@@ -1,0 +1,17 @@
+# Sensitive account configs
+config/account_*.json
+!config/account_example.json
+config/account_config.json
+
+# Browser profiles and sessions
+data/playwright-profile/
+data/profiles/
+data/imported-chrome-profile-*/
+
+# Runtime logs and debug artifacts
+logs/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
