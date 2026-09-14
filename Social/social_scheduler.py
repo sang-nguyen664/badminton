@@ -205,6 +205,8 @@ class StageStats:
 class JobMetrics:
     job_id: str
     job_name: str
+    target_name: str
+    target_url: str
     source_file: str
     worker_id: int
     stages: dict[str, float] = field(default_factory=dict)
@@ -214,6 +216,7 @@ class JobMetrics:
     submit_uncertain: bool = False
     success: bool = False
     failure_reason: str = ""
+    post_url: str = ""
     detail_times: dict[str, float] = field(default_factory=dict)
     detail_counts: dict[str, int] = field(default_factory=dict)
 
@@ -1329,6 +1332,20 @@ async def find_photo_video_control(scope: Any) -> Locator | None:
     return None
 
 
+async def click_visible_locator_without_extra_scroll(page: Page, locator: Locator, timeout_ms: int = 4000) -> None:
+    await locator.wait_for(state="visible", timeout=timeout_ms)
+    bbox = await locator.bounding_box()
+    viewport = page.viewport_size or {"width": 1280, "height": 720}
+    if bbox:
+        center_x = bbox["x"] + bbox["width"] / 2
+        center_y = bbox["y"] + bbox["height"] / 2
+        if 0 <= center_x <= viewport["width"] and 0 <= center_y <= viewport["height"]:
+            await page.mouse.click(center_x, center_y)
+            return
+
+    await locator.click(timeout=timeout_ms)
+
+
 async def wait_for_file_input(
     page: Page,
     dialog: Any,
@@ -1387,7 +1404,7 @@ async def click_photo_video_and_prepare_input(
 
     try:
         async with page.expect_file_chooser(timeout=2200) as chooser_info:
-            await control.click(timeout=4000)
+            await click_visible_locator_without_extra_scroll(page, control, timeout_ms=4000)
         chooser = await chooser_info.value
         await chooser.set_files(str(image_file))
         return None, "photo-video-file-chooser"
@@ -1395,11 +1412,6 @@ async def click_photo_video_and_prepare_input(
         pass
     except Exception:
         pass
-
-    try:
-        await control.click(timeout=4000)
-    except Exception:
-        return None, "photo-video-click-failed"
 
     file_input = await wait_for_file_input(
         page,
@@ -1645,7 +1657,7 @@ async def ensure_logged_in(page: Page, account_config: AccountConfig, destinatio
 
 
 async def ensure_initial_login(context: BrowserContext, account_config: AccountConfig, options: RuntimeOptions) -> None:
-    page = await context.new_page()
+    page = await new_page_keep_minimized(context, options)
     try:
         print("[INFO] Kiem tra dang nhap Facebook truoc khi load danh sach group...")
         await page.goto("https://www.facebook.com/", wait_until="domcontentloaded", timeout=45000)
@@ -1683,6 +1695,101 @@ async def is_enabled_button(locator: Locator) -> bool:
         )
     except Exception:
         return False
+
+
+GROUP_POST_PERMALINK_PATTERN = re.compile(
+    r"https:\\/\\/www\.facebook\.com\\/groups\\/[A-Za-z0-9_.\-]+\\/(?:posts|permalink)\\/\d+\\/?"
+    r"|https://www\.facebook\.com/groups/[A-Za-z0-9_.\-]+/(?:posts|permalink)/\d+/?"
+)
+POST_ID_FALLBACK_PATTERN = re.compile(r'"(?:post_id|story_fbid)":"?(\d{6,})"?')
+
+
+def extract_group_alias(group_url: str) -> str:
+    match = re.search(r"/groups/([^/?#]+)", group_url)
+    return match.group(1) if match else ""
+
+
+def extract_group_post_url(text: str, group_url: str, allow_post_id_fallback: bool) -> str:
+    """Trich permalink bai viet trong group tu body response GraphQL cua Facebook."""
+    group_alias = extract_group_alias(group_url)
+    for match in GROUP_POST_PERMALINK_PATTERN.finditer(text):
+        url = match.group(0).replace("\\/", "/")
+        if group_alias and f"/groups/{group_alias}/" in url:
+            return url
+    if not allow_post_id_fallback:
+        return ""
+    match = GROUP_POST_PERMALINK_PATTERN.search(text)
+    if match:
+        return match.group(0).replace("\\/", "/")
+    match = POST_ID_FALLBACK_PATTERN.search(text)
+    if match and group_url:
+        return f"{group_url.rstrip('/')}/posts/{match.group(1)}/"
+    return ""
+
+
+class PostLinkCapture:
+    """Bat permalink bai viet moi tu response GraphQL trong cua so bam Dang/Post."""
+
+    def __init__(self, page: Page, group_url: str) -> None:
+        self.page = page
+        self.group_url = group_url
+        self.candidates: list[str] = []
+        self._pending: set[asyncio.Task] = set()
+        self._handler: Any = None
+
+    def start(self) -> None:
+        def on_response(response: Any) -> None:
+            try:
+                if "graphql" not in response.url:
+                    return
+                if response.request.method.upper() != "POST":
+                    return
+            except Exception:
+                return
+            task = asyncio.create_task(self._read_body(response))
+            self._pending.add(task)
+            task.add_done_callback(self._pending.discard)
+
+        self._handler = on_response
+        self.page.on("response", on_response)
+
+    async def _read_body(self, response: Any) -> None:
+        try:
+            post_data = response.request.post_data or ""
+        except Exception:
+            post_data = ""
+        is_create_mutation = "ComposerStoryCreate" in post_data
+        try:
+            text = await response.text()
+        except Exception:
+            return
+        url = extract_group_post_url(text, self.group_url, allow_post_id_fallback=is_create_mutation)
+        if url:
+            self.candidates.append(url)
+
+    async def stop_and_collect(self, grace_ms: int = 2500) -> str:
+        if self._handler is not None:
+            try:
+                self.page.remove_listener("response", self._handler)
+            except Exception:
+                pass
+            self._handler = None
+
+        deadline = time.monotonic() + grace_ms / 1000.0
+        while not self.candidates and time.monotonic() < deadline:
+            pending = [task for task in self._pending if not task.done()]
+            if not pending:
+                break
+            await asyncio.wait(pending, timeout=min(0.5, max(0.05, deadline - time.monotonic())))
+
+        remaining = [task for task in self._pending if not task.done()]
+        if remaining:
+            await asyncio.wait(remaining, timeout=1.0)
+            for task in remaining:
+                if not task.done():
+                    task.cancel()
+
+        return self.candidates[0] if self.candidates else ""
 
 
 async def submit_post(page: Page, composer_scope: Any, dry_run: bool, options: RuntimeOptions, metrics: JobMetrics) -> tuple[bool, bool]:
@@ -1772,27 +1879,67 @@ async def run_job_attempt(
         metrics.stages["image_file_chooser"] = 0.0
         metrics.stages["preview_confirm"] = 0.0
 
-    with StageTimer(metrics, "post_click"):
-        clicked, confirmed = await submit_post(
-            page,
-            composer_scope=composer_scope,
-            dry_run=options.dry_run,
-            options=options,
-            metrics=metrics,
-        )
-        metrics.submit_clicked = clicked
+    link_capture = PostLinkCapture(page, job.url) if not options.dry_run else None
+    try:
+        with StageTimer(metrics, "post_click"):
+            if link_capture is not None:
+                link_capture.start()
+            clicked, confirmed = await submit_post(
+                page,
+                composer_scope=composer_scope,
+                dry_run=options.dry_run,
+                options=options,
+                metrics=metrics,
+            )
+            metrics.submit_clicked = clicked
 
-    if options.dry_run:
-        metrics.stages["submit_completion"] = 0.0
-    else:
-        with StageTimer(metrics, "submit_completion"):
-            if metrics.submit_clicked and not confirmed:
-                raise RuntimeError("SUBMIT_UNCERTAIN: Da click Post nhung khong xac nhan duoc ket qua.")
+        if options.dry_run:
+            metrics.stages["submit_completion"] = 0.0
+        else:
+            with StageTimer(metrics, "submit_completion"):
+                if metrics.submit_clicked and not confirmed:
+                    raise RuntimeError("SUBMIT_UNCERTAIN: Da click Post nhung khong xac nhan duoc ket qua.")
+    finally:
+        if link_capture is not None:
+            metrics.post_url = await link_capture.stop_and_collect()
+            if metrics.post_url:
+                print(f"[INFO][worker={metrics.worker_id}][{job.target_id}] Link bai viet: {metrics.post_url}")
 
     if options.dry_run:
         await close_composer(page, composer_scope=composer_scope)
 
     return matrix
+
+
+async def minimize_browser_window(context: BrowserContext) -> None:
+    page = context.pages[0] if context.pages else None
+    owns_page = page is None
+    if owns_page:
+        page = await context.new_page()
+    try:
+        session = await context.new_cdp_session(page)
+        window_info = await session.send("Browser.getWindowForTarget")
+        await session.send("Browser.setWindowBounds", {
+            "windowId": window_info["windowId"],
+            "bounds": {"windowState": "minimized"},
+        })
+    except Exception as exc:
+        print(f"[WARN] Khong minimize duoc cua so browser: {exc}")
+    finally:
+        if owns_page:
+            try:
+                await page.close()
+            except Exception:
+                pass
+
+
+async def new_page_keep_minimized(context: BrowserContext, options: RuntimeOptions) -> Page:
+    # context.new_page() bring tab len front -> Windows restore cua so dang minimized.
+    # Phai minimize lai sau moi lan tao page; page.goto khong lam restore.
+    page = await context.new_page()
+    if not options.headless:
+        await minimize_browser_window(context)
+    return page
 
 
 async def build_context(profile_dir: Path, account_config: AccountConfig, options: RuntimeOptions) -> BrowserContext:
@@ -1811,6 +1958,10 @@ async def build_context(profile_dir: Path, account_config: AccountConfig, option
         launch_args.append(f"--profile-directory={account_config.chrome_profile_directory}")
     else:
         profile_dir.mkdir(parents=True, exist_ok=True)
+    # Khi cua so bi minimize, Chrome van render/timer binh thuong (tranh throttle lam hong click/scroll).
+    if not options.headless:
+        launch_args.append("--disable-backgrounding-occluded-windows")
+        launch_args.append("--disable-renderer-backgrounding")
 
     if options.debug_composer:
         launch_args.append("--auto-open-devtools-for-tabs")
@@ -1825,6 +1976,8 @@ async def build_context(profile_dir: Path, account_config: AccountConfig, option
         await pw.stop()
         raise
     setattr(context, "_scheduler_playwright", pw)
+    if not options.headless:
+        await minimize_browser_window(context)
     return context
 
 
@@ -1918,6 +2071,22 @@ def print_batch_summary(
         src_ok = sum(1 for item in succeeded if Path(item.source_file).name == source_name)
         src_fail = sum(1 for item in failed if Path(item.source_file).name == source_name)
         summary_lines.append(f"  - {source_name}: jobs={count}, success={src_ok}, failed={src_fail}")
+    summary_lines.append("[INFO] Nhom dang bai that bai:")
+    if failed:
+        for item in failed:
+            summary_lines.append(f"  - name={item.target_name}")
+            summary_lines.append(f"    url={item.target_url}")
+            summary_lines.append(f"    reason={item.failure_reason}")
+    else:
+        summary_lines.append("  - none")
+    summary_lines.append("[INFO] Link bai viet da dang thanh cong:")
+    if succeeded:
+        for item in succeeded:
+            summary_lines.append(f"  - name={item.target_name}")
+            summary_lines.append(f"    group_url={item.target_url}")
+            summary_lines.append(f"    post_url={item.post_url}")
+    else:
+        summary_lines.append("  - none")
 
     summary_file = os.environ.get("SOCIAL_SCHEDULER_SUMMARY_FILE", "").strip()
     if summary_file:
@@ -2117,7 +2286,7 @@ async def recreate_worker_page(worker: WorkerPageState, run_state: RunState) -> 
         await worker.page.close()
     except Exception:
         pass
-    worker.page = await run_state.context.new_page()
+    worker.page = await new_page_keep_minimized(run_state.context, run_state.options)
     worker.upload_strategy = "auto"
     worker.popup_none_streak = 0
     worker.last_composer_signature = ""
@@ -2127,6 +2296,8 @@ async def execute_job_with_retry(state: RunState, worker: WorkerPageState, job: 
     metrics = JobMetrics(
         job_id=job.job_id,
         job_name=job.display_name,
+        target_name=job.target_name,
+        target_url=job.url,
         source_file=job.source_file,
         worker_id=worker.worker_id,
     )
@@ -2206,7 +2377,7 @@ async def execute_job_with_retry(state: RunState, worker: WorkerPageState, job: 
 
 async def worker_loop(worker_id: int, queue: asyncio.Queue[Job], state: RunState, batch: BatchMetrics) -> list[JobMetrics]:
     results: list[JobMetrics] = []
-    page = await state.context.new_page()
+    page = await new_page_keep_minimized(state.context, state.options)
     worker = WorkerPageState(worker_id=worker_id, page=page)
 
     try:
@@ -2297,6 +2468,49 @@ def validate_runtime_options(args: argparse.Namespace) -> RuntimeOptions:
     )
 
 
+def copy_runtime_options_with_concurrency(options: RuntimeOptions, concurrency: int) -> RuntimeOptions:
+    return RuntimeOptions(
+        headless=options.headless,
+        dry_run=options.dry_run,
+        debug_composer=options.debug_composer,
+        pause_for_debugger=options.pause_for_debugger,
+        performance_mode=options.performance_mode,
+        concurrency=concurrency,
+    )
+
+
+def build_final_metrics_after_fallback(
+    jobs: list[Job],
+    initial_batch: BatchMetrics,
+    fallback_batch: BatchMetrics | None,
+) -> tuple[list[JobMetrics], list[JobMetrics], BatchMetrics]:
+    initial_succeeded = [item for item in initial_batch.job_metrics if item.success]
+    initial_failed = [item for item in initial_batch.job_metrics if not item.success]
+
+    fallback_metrics = fallback_batch.job_metrics if fallback_batch is not None else []
+    fallback_succeeded_by_id = {item.job_id: item for item in fallback_metrics if item.success}
+    fallback_failed_by_id = {item.job_id: item for item in fallback_metrics if not item.success}
+
+    final_succeeded = initial_succeeded + list(fallback_succeeded_by_id.values())
+    final_failed: list[JobMetrics] = []
+    for item in initial_failed:
+        if item.job_id in fallback_succeeded_by_id:
+            continue
+        final_failed.append(fallback_failed_by_id.get(item.job_id, item))
+
+    final_by_id = {item.job_id: item for item in [*final_succeeded, *final_failed]}
+    ordered_final_metrics = [final_by_id[job.job_id] for job in jobs if job.job_id in final_by_id]
+
+    summary_batch = BatchMetrics(started_at=initial_batch.started_at)
+    summary_batch.completed_at = (fallback_batch.completed_at if fallback_batch is not None else initial_batch.completed_at)
+    summary_batch.job_metrics = ordered_final_metrics
+    summary_batch.retry_count = initial_batch.retry_count + (fallback_batch.retry_count if fallback_batch is not None else 0)
+    summary_batch.browser_restart_count = initial_batch.browser_restart_count + (
+        fallback_batch.browser_restart_count if fallback_batch is not None else 0
+    )
+    return final_succeeded, final_failed, summary_batch
+
+
 async def async_main() -> int:
     args = parse_args()
 
@@ -2322,6 +2536,10 @@ async def async_main() -> int:
     except Exception as exc:
         print(f"[ERROR] Doc cau hinh that bai: {exc}")
         return 1
+
+    if account_config.account_id.lower() == "account_chau" and options.concurrency > 1:
+        print("[INFO] Account Chau dung che do on dinh: giam concurrency tu 2 xuong 1 de tranh scroll/click conflict.")
+        options.concurrency = 1
 
     profile_dir_value = args.profile_dir.strip() or account_config.profile_dir
     profile_dir = resolve_from_base(profile_dir_value)
@@ -2367,15 +2585,45 @@ async def async_main() -> int:
         options=options,
     )
 
-    succeeded = [item for item in batch.job_metrics if item.success]
+    fallback_batch: BatchMetrics | None = None
     failed = [item for item in batch.job_metrics if not item.success]
+    if failed:
+        job_by_id = {job.job_id: job for job in jobs}
+        retryable_failed_jobs = [job_by_id[item.job_id] for item in failed if not item.submit_uncertain and item.job_id in job_by_id]
+        skipped_uncertain = [item for item in failed if item.submit_uncertain]
+        if skipped_uncertain:
+            print(
+                "[WARN] Bo qua fallback cho job SUBMIT_UNCERTAIN vi co the da bam Dang/Post, "
+                "tranh dang trung."
+            )
+            for item in skipped_uncertain:
+                print(f"  - {item.job_name}: {item.failure_reason}")
+
+        if retryable_failed_jobs:
+            print(
+                "[INFO] Fallback: chay lai cac group that bai voi concurrency=1. "
+                f"jobs={len(retryable_failed_jobs)}"
+            )
+            fallback_options = copy_runtime_options_with_concurrency(options, concurrency=1)
+            fallback_batch = await run_pending_jobs(
+                jobs_to_run=retryable_failed_jobs,
+                account_config=account_config,
+                profile_dir=profile_dir,
+                options=fallback_options,
+            )
+
+    succeeded, failed, summary_batch = build_final_metrics_after_fallback(
+        jobs=jobs,
+        initial_batch=batch,
+        fallback_batch=fallback_batch,
+    )
 
     return print_batch_summary(
         jobs_total=len(jobs),
         succeeded=succeeded,
         failed=failed,
         source_counts=source_counts,
-        batch=batch,
+        batch=summary_batch,
     )
 
 
