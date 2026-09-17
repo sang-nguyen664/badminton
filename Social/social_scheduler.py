@@ -1672,6 +1672,7 @@ async def ensure_initial_login(context: BrowserContext, account_config: AccountC
 
 async def ensure_initial_login_for_profile(profile_dir: Path, account_config: AccountConfig, options: RuntimeOptions) -> None:
     context = await build_context(profile_dir=profile_dir, account_config=account_config, options=options)
+    await close_all_pages(context)
     try:
         await ensure_initial_login(context, account_config, options)
     finally:
@@ -1733,7 +1734,8 @@ class PostLinkCapture:
     def __init__(self, page: Page, group_url: str) -> None:
         self.page = page
         self.group_url = group_url
-        self.candidates: list[str] = []
+        self.create_candidates: list[str] = []       # tu response cua ComposerStoryCreateMutation (dang tin cay)
+        self.incidental_candidates: list[str] = []   # tu response GraphQL khac (co the la bai nguoi khac)
         self._pending: set[asyncio.Task] = set()
         self._handler: Any = None
 
@@ -1764,8 +1766,12 @@ class PostLinkCapture:
         except Exception:
             return
         url = extract_group_post_url(text, self.group_url, allow_post_id_fallback=is_create_mutation)
-        if url:
-            self.candidates.append(url)
+        if not url:
+            return
+        if is_create_mutation:
+            self.create_candidates.append(url)
+        else:
+            self.incidental_candidates.append(url)
 
     async def stop_and_collect(self, grace_ms: int = 2500) -> str:
         if self._handler is not None:
@@ -1776,7 +1782,7 @@ class PostLinkCapture:
             self._handler = None
 
         deadline = time.monotonic() + grace_ms / 1000.0
-        while not self.candidates and time.monotonic() < deadline:
+        while not (self.create_candidates or self.incidental_candidates) and time.monotonic() < deadline:
             pending = [task for task in self._pending if not task.done()]
             if not pending:
                 break
@@ -1789,7 +1795,12 @@ class PostLinkCapture:
                 if not task.done():
                     task.cancel()
 
-        return self.candidates[0] if self.candidates else ""
+        if self.create_candidates:
+            return self.create_candidates[0]
+        if self.incidental_candidates:
+            print("[WARN] Khong bat duoc link tu mutation tao bai; dung link tu response khac (co the khong chinh xac).")
+            return self.incidental_candidates[0]
+        return ""
 
 
 async def submit_post(page: Page, composer_scope: Any, dry_run: bool, options: RuntimeOptions, metrics: JobMetrics) -> tuple[bool, bool]:
@@ -1989,6 +2000,19 @@ async def close_context(context: BrowserContext) -> None:
         pass
     if pw is not None:
         await pw.stop()
+
+async def close_all_pages(context: BrowserContext) -> Page:
+    """Dong moi tab dang mo trong profile (tab khoi phuc tu phien truoc, tab sot lai
+    tu run bi crash). Goi ngay sau build_context de profile khong tich luy tab.
+    Tra ve 1 tab trong moi (tao truoc khi dong, tranh Chrome tu tat khi dong tab cuoi)."""
+    pages = list(context.pages)
+    keeper = await context.new_page()
+    for page in pages:
+        try:
+            await page.close()
+        except Exception:
+            pass
+    return keeper
 
 
 def get_quantile(values: list[float], q: float) -> float:
@@ -2430,6 +2454,7 @@ async def run_pending_jobs(
 ) -> BatchMetrics:
     batch = BatchMetrics()
     context = await build_context(profile_dir=profile_dir, account_config=account_config, options=options)
+    await close_all_pages(context)
     queue: asyncio.Queue[Job] = asyncio.Queue()
     for job in jobs_to_run:
         queue.put_nowait(job)

@@ -25,15 +25,22 @@ else {
 $PythonExe = Join-Path $SocialDir '.venv\Scripts\python.exe'
 $TaskPrefix = 'Badminton Social Scheduler'
 $DailyLogDir = Join-Path $SocialDir 'logs\daily_log'
+$LockDir = Join-Path $SocialDir 'logs\locks'
+$LockStaleMinutes = 45
+$BumpFinishWaitMinutes = 15   # bump khoe manh chay ~7-9p; qua 15p coi nhu treo
 $PostedLinksDir = Join-Path $SocialDir 'logs\posted_links'
 $PostedLinksCsv = Join-Path $PostedLinksDir 'posted_links.csv'
 $Weekdays = @('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')
 
 $Schedule = @(
-    @{ Account = 'linh'; Time = '12:00' },
-    @{ Account = 'linh'; Time = '16:00' },
-    @{ Account = 'sang'; Time = '14:00' },
-    @{ Account = 'sang'; Time = '18:00' }
+    @{ Account = 'linh'; Time = '11:00' },
+    @{ Account = 'linh'; Time = '14:00' },
+    @{ Account = 'linh'; Time = '17:00' },
+    @{ Account = 'sang'; Time = '12:00' },
+    @{ Account = 'sang'; Time = '15:00' },
+    @{ Account = 'sang'; Time = '18:00' },
+    @{ Account = 'chau'; Time = '13:00' },
+    @{ Account = 'chau'; Time = '16:00' }
 )
 
 function Resolve-PythonExe {
@@ -106,9 +113,15 @@ function Get-FailedGroupNotes {
                 $Url = $Matches[1].Trim()
             }
 
+            $Reason = ''
+            if (($Index + 2) -lt $SummaryLines.Count -and $SummaryLines[$Index + 2] -match '^\s*reason=(.*)$') {
+                $Reason = $Matches[1].Trim()
+            }
+
             $Notes += [PSCustomObject]@{
                 Name = $Name
                 Url = $Url
+                Reason = $Reason
             }
         }
     }
@@ -240,6 +253,9 @@ function Write-DailyRunLog {
         foreach ($Item in $FailedNotes) {
             $Lines += "Ten group dang that bai: $($Item.Name)"
             $Lines += "Link group dang that bai: $($Item.Url)"
+            if ($Item.Reason) {
+                $Lines += "Ly do that bai: $($Item.Reason)"
+            }
             $Lines += ''
         }
     }
@@ -282,6 +298,49 @@ function Invoke-SocialScheduler {
     if (-not (Test-Path (Join-Path $SocialDir $AccountConfig))) {
         throw "Account config not found: $AccountConfig"
     }
+
+    # Mutex voi tool comment bump: ca 2 dung chung Chrome profile cua account.
+    # Thu tu uu tien: dang bai di truoc, bump chay sau (bump tu cho khi thay poster lock).
+    # Neu bump lo giu profile truoc (hiem), poster CHO bump ket thuc tu nhien (khong mat luot bump);
+    # chi dung bump khi qua $BumpFinishWaitMinutes phut (= bump treo).
+    New-Item -ItemType Directory -Path $LockDir -Force | Out-Null
+    $PosterLock = Join-Path $LockDir "poster_$SelectedAccount.lock"
+    $BumpLock = Join-Path $LockDir "bump_$SelectedAccount.lock"
+
+    if (Test-Path $BumpLock) {
+        $WaitUntil = (Get-Date).AddMinutes($BumpFinishWaitMinutes)
+        while (Test-Path $BumpLock) {
+            $BumpLockAge = (Get-Date) - (Get-Item $BumpLock).LastWriteTime
+            if ($BumpLockAge.TotalMinutes -gt $LockStaleMinutes) {
+                break
+            }
+            if ((Get-Date) -ge $WaitUntil) {
+                break
+            }
+            Write-Host "[INFO] Comment bump account $SelectedAccount dang chay, poster cho bump ket thuc (toi da $BumpFinishWaitMinutes phut)..."
+            Start-Sleep -Seconds 20
+        }
+
+        if (Test-Path $BumpLock) {
+            Write-Host "[WARN] Comment bump account $SelectedAccount chay qua $BumpFinishWaitMinutes phut (treo), dung de giai phong profile cho lich dang bai."
+            Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+                Where-Object { $_.CommandLine -match 'comment_bump_today' } |
+                ForEach-Object {
+                    Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+                    Write-Host "[OK] Da dung bump python PID=$($_.ProcessId)"
+                }
+            Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" -ErrorAction SilentlyContinue |
+                Where-Object { $_.CommandLine -match "profiles[\\/]account_$SelectedAccount" } |
+                ForEach-Object {
+                    Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+                    Write-Host "[OK] Da dung chrome profile account_$SelectedAccount PID=$($_.ProcessId)"
+                }
+            Remove-Item $BumpLock -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 3
+        }
+    }
+
+    Set-Content -Path $PosterLock -Value (Get-Date).ToString('s') -Encoding UTF8
 
     Push-Location $SocialDir
     try {
@@ -340,6 +399,7 @@ function Invoke-SocialScheduler {
             Remove-Item $SummaryFile -Force -ErrorAction SilentlyContinue
         }
         Remove-Item Env:SOCIAL_SCHEDULER_SUMMARY_FILE -ErrorAction SilentlyContinue
+        Remove-Item $PosterLock -Force -ErrorAction SilentlyContinue
         Pop-Location
     }
 }

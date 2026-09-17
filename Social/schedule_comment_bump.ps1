@@ -17,15 +17,19 @@ else {
 }
 $BatPath = Join-Path $SocialDir 'Bump\run_comment_bump_today.bat'
 $TaskPrefix = 'Badminton Social Comment Bump'
-$IntervalMinutes = 30
+$IntervalMinutes = 15
 
-# Moi slot tuong ung 1 dot dang bai. Tool se tu --slot de chi lay link cua dot do.
-# linh dang 12:00 + 16:00 (comment bang sang); sang dang 14:00 + 18:00 (comment bang linh).
+# Moi slot tuong ung 1 dot dang bai: bump dung 3 lan luc :15, :30, :45 sau gio dang roi ngung.
+# linh dang 11/14/17h (sang comment); sang dang 12/15/18h (linh comment); chau dang 13/16h (linh comment).
 $Slots = @(
-    @{ Slot = '1200'; Start = '12:30'; End = '16:00' },
-    @{ Slot = '1400'; Start = '14:30'; End = '18:00' },
-    @{ Slot = '1600'; Start = '16:30'; End = '19:30' },
-    @{ Slot = '1800'; Start = '18:30'; End = '19:30' }
+    @{ Slot = '1100'; Start = '11:15'; End = '11:45' },
+    @{ Slot = '1200'; Start = '12:15'; End = '12:45' },
+    @{ Slot = '1300'; Start = '13:15'; End = '13:45' },
+    @{ Slot = '1400'; Start = '14:15'; End = '14:45' },
+    @{ Slot = '1500'; Start = '15:15'; End = '15:45' },
+    @{ Slot = '1600'; Start = '16:15'; End = '16:45' },
+    @{ Slot = '1700'; Start = '17:15'; End = '17:45' },
+    @{ Slot = '1800'; Start = '18:15'; End = '18:45' }
 )
 
 function Install-CommentBumpTask {
