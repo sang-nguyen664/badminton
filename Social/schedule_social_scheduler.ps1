@@ -4,7 +4,7 @@ param(
     [ValidateSet('install', 'run', 'list')]
     [string]$Mode = 'install',
 
-    [ValidateSet('linh', 'sang', 'chau')]
+    [ValidateSet('linh', 'sang', 'trang')]
     [string]$Account = 'linh',
 
     [string]$ScheduledTime = ''
@@ -39,8 +39,8 @@ $Schedule = @(
     @{ Account = 'sang'; Time = '12:00' },
     @{ Account = 'sang'; Time = '15:00' },
     @{ Account = 'sang'; Time = '18:00' },
-    @{ Account = 'chau'; Time = '13:00' },
-    @{ Account = 'chau'; Time = '16:00' }
+    @{ Account = 'trang'; Time = '13:00' },
+    @{ Account = 'trang'; Time = '16:00' }
 )
 
 function Resolve-PythonExe {
@@ -284,7 +284,7 @@ function Write-DailyRunLog {
 function Invoke-SocialScheduler {
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet('linh', 'sang', 'chau')]
+        [ValidateSet('linh', 'sang', 'trang')]
         [string]$SelectedAccount,
 
         [string]$SelectedScheduledTime = ''

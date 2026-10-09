@@ -17,19 +17,17 @@ else {
 }
 $BatPath = Join-Path $SocialDir 'Bump\run_comment_bump_today.bat'
 $TaskPrefix = 'Badminton Social Comment Bump'
-$IntervalMinutes = 15
-
-# Moi slot tuong ung 1 dot dang bai: bump dung 3 lan luc :15, :30, :45 sau gio dang roi ngung.
-# linh dang 11/14/17h (sang comment); sang dang 12/15/18h (linh comment); chau dang 13/16h (linh comment).
+# Moi slot tuong ung 1 dot dang bai: bump dung 1 lan luc :20 sau gio dang (68 bai / 2 tab ~ 26p, xong truoc :46).
+# linh dang 11/14/17h (trang comment); sang dang 12/15/18h (linh comment); trang dang 13/16h (sang comment).
 $Slots = @(
-    @{ Slot = '1100'; Start = '11:15'; End = '11:45' },
-    @{ Slot = '1200'; Start = '12:15'; End = '12:45' },
-    @{ Slot = '1300'; Start = '13:15'; End = '13:45' },
-    @{ Slot = '1400'; Start = '14:15'; End = '14:45' },
-    @{ Slot = '1500'; Start = '15:15'; End = '15:45' },
-    @{ Slot = '1600'; Start = '16:15'; End = '16:45' },
-    @{ Slot = '1700'; Start = '17:15'; End = '17:45' },
-    @{ Slot = '1800'; Start = '18:15'; End = '18:45' }
+    @{ Slot = '1100'; Start = '11:20' },
+    @{ Slot = '1200'; Start = '12:20' },
+    @{ Slot = '1300'; Start = '13:20' },
+    @{ Slot = '1400'; Start = '14:20' },
+    @{ Slot = '1500'; Start = '15:20' },
+    @{ Slot = '1600'; Start = '16:20' },
+    @{ Slot = '1700'; Start = '17:20' },
+    @{ Slot = '1800'; Start = '18:20' }
 )
 
 function Install-CommentBumpTask {
@@ -39,19 +37,13 @@ function Install-CommentBumpTask {
 
     foreach ($Item in $Slots) {
         $start = [datetime]::ParseExact($Item.Start, 'HH:mm', $null)
-        $end = [datetime]::ParseExact($Item.End, 'HH:mm', $null)
-        $duration = $end - $start
         $taskName = "$TaskPrefix - slot $($Item.Slot)"
 
         $Action = New-ScheduledTaskAction `
             -Execute $BatPath `
             -Argument "--slot $($Item.Slot)" `
             -WorkingDirectory $SocialDir
-        # PS 5.1 khong cho -RepetitionInterval tren -Daily, nen lay Repetition tu trigger -Once.
         $Trigger = New-ScheduledTaskTrigger -Daily -At $start
-        $Trigger.Repetition = (New-ScheduledTaskTrigger -Once -At $start `
-            -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) `
-            -RepetitionDuration $duration).Repetition
         $Settings = New-ScheduledTaskSettingsSet `
             -AllowStartIfOnBatteries `
             -DontStopIfGoingOnBatteries `
@@ -63,10 +55,10 @@ function Install-CommentBumpTask {
             -Action $Action `
             -Trigger $Trigger `
             -Settings $Settings `
-            -Description "Comment '.' vao bai viet dot $($Item.Slot). Chay hang ngay $($Item.Start)-$($Item.End), moi $IntervalMinutes phut." `
+            -Description "Comment 'Ben minh van con slot nha' vao bai viet dot $($Item.Slot). Chay hang ngay luc $($Item.Start), dung 1 lan." `
             -Force | Out-Null
 
-        Write-Host "[OK] Installed task: $taskName ($($Item.Start)-$($Item.End), moi $IntervalMinutes phut)"
+        Write-Host "[OK] Installed task: $taskName ($($Item.Start), dung 1 lan)"
     }
 }
 

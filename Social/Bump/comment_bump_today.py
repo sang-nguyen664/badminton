@@ -24,6 +24,7 @@ try:
         configure_stdout_for_windows,
         ensure_logged_in,
         load_account_config,
+        new_page_keep_minimized,
         resolve_from_base,
     )
 except ModuleNotFoundError as exc:
@@ -40,18 +41,20 @@ GLOBAL_BUMP_LOCK = LOCK_DIR / "bump_active.lock"   # chi 1 luot bump chay tren t
 LOCK_STALE_MINUTES = 45
 POSTER_WAIT_MINUTES = 20   # bump cho poster toi da 20p; qua han coi nhu poster crash
 LOCK_POLL_SECONDS = 15
-COMMENT_TEXT = "."
-COMMENT_DELAY_SECONDS = 12
+COMMENT_TEXT = "Bên mình vẫn còn slot nha"
+COMMENT_DELAY_SECONDS = 30
+BUMP_WORKERS = 2                  # so tab comment song song cho 1 account (giong scheduler dang bai, toi da 2)
 MAX_ATTEMPTS = 3                  # so lan thu toi da cho 1 bai viet truoc khi ghi nhan error
-RETRY_BACKOFF_SECONDS = [5, 10]   # thoi gian cho giua cac lan thu lai
+RETRY_BACKOFF_SECONDS = [15, 30]   # thoi gian cho giua cac lan thu lai
 BUMP_LOG_PREFIX = "comment_bump"
 
 # Account map: log cua account nay thi dung account kia de comment.
 ACCOUNT_MAP = {
-    "linh": "config/account_sang.json",
+    "linh": "config/account_trang.json",
+    "trang": "config/account_sang.json",
     "sang": "config/account_linh.json",
-    "chau": "config/account_linh.json",
-}
+}  # vong tron: bai linh -> trang bump, bai trang -> sang bump, bai sang -> linh bump
+# (2026-10-09: sang khong xem duoc bai cua linh - nghi bi block/mat quyen xem - nen dao chieu vong)
 
 COMMENT_EDITOR_SELECTORS = [
     "div[contenteditable='true'][role='textbox'][aria-label*='comment' i]",
@@ -87,6 +90,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true", help="Chi mo bai viet, khong comment that.")
     parser.add_argument("--headless", action="store_true", help="Chay browser an.")
     parser.add_argument("--max-posts", type=int, default=0, help="Gioi han so bai comment (0 = khong gioi han).")
+    parser.add_argument("--skip", type=int, default=0, help="Bo qua N bai dau tien (dung khi chay bu dot truoc bi ngat giua chung).")
     parser.add_argument("--date", default="", help="Ngay can xu ly dang YYYYMMDD (mac dinh: hom nay).")
     parser.add_argument(
         "--slot",
@@ -98,16 +102,16 @@ def parse_args() -> argparse.Namespace:
 
 
 # Khung gio bump cho tung dot dang bai: (gio_bat_dau_bump, gio_ket_thuc_bump) tinh bang phut.
-# Moi bai bump dung 3 lan: :15, :30, :45 sau gio dang roi ngung. Khung khong chong lan nhau.
+# Moi bai bump dung 1 lan luc :20 sau gio dang roi ngung. Khung khong chong lan nhau.
 SLOT_WINDOWS = {
-    "1100": (11 * 60 + 15, 11 * 60 + 45),  # linh dang 11:00 -> sang bump 11:15-11:45
-    "1200": (12 * 60 + 15, 12 * 60 + 45),  # sang dang 12:00 -> linh bump 12:15-12:45
-    "1300": (13 * 60 + 15, 13 * 60 + 45),  # chau dang 13:00 -> linh bump 13:15-13:45
-    "1400": (14 * 60 + 15, 14 * 60 + 45),  # linh dang 14:00 -> sang bump 14:15-14:45
-    "1500": (15 * 60 + 15, 15 * 60 + 45),  # sang dang 15:00 -> linh bump 15:15-15:45
-    "1600": (16 * 60 + 15, 16 * 60 + 45),  # chau dang 16:00 -> linh bump 16:15-16:45
-    "1700": (17 * 60 + 15, 17 * 60 + 45),  # linh dang 17:00 -> sang bump 17:15-17:45
-    "1800": (18 * 60 + 15, 18 * 60 + 45),  # sang dang 18:00 -> linh bump 18:15-18:45
+    "1100": (11 * 60 + 20, 11 * 60 + 50),  # linh dang 11:00 -> trang bump 11:20-11:50
+    "1200": (12 * 60 + 20, 12 * 60 + 50),  # sang dang 12:00 -> linh bump 12:20-12:50
+    "1300": (13 * 60 + 20, 13 * 60 + 50),  # trang dang 13:00 -> sang bump 13:20-13:50
+    "1400": (14 * 60 + 20, 14 * 60 + 50),  # linh dang 14:00 -> trang bump 14:20-14:50
+    "1500": (15 * 60 + 20, 15 * 60 + 50),  # sang dang 15:00 -> linh bump 15:20-15:50
+    "1600": (16 * 60 + 20, 16 * 60 + 50),  # trang dang 16:00 -> sang bump 16:20-16:50
+    "1700": (17 * 60 + 20, 17 * 60 + 50),  # linh dang 17:00 -> trang bump 17:20-17:50
+    "1800": (18 * 60 + 20, 18 * 60 + 50),  # sang dang 18:00 -> linh bump 18:20-18:50
 }
 
 
@@ -314,12 +318,23 @@ async def find_largest_article(page: Any) -> Any | None:
 
 
 async def find_target_article(page: Any, post_id: str) -> Any | None:
-    """Tim article chua dung bai viet muc tieu. Bat buoc phai co truoc khi comment -
+    """Tim container dung bai viet muc tieu. Bat buoc phai co truoc khi comment -
     tranh comment nham bai khac tren newsfeed.
-    Cach 1 (manh nhat): meta og:url chua post id -> trang dang render dung bai viet.
-    Cach 2 (du phong): article chua link post id (bai da co comment thi de co)."""
+    Cach 1 (permalink): URL trinh duyet chua post id -> modal bai viet la dialog
+    chua o nhap comment (bai viet chinh khong nam trong div[role='article']).
+    Cach 2: meta og:url chua post id (Facebook cu, hien khong con).
+    Cach 3: article chua link post id (bai da co comment thi de co)."""
     if not post_id:
         return None
+    if post_id in page.url:
+        dialog_with_editor = page.locator("div[role='dialog']").filter(
+            has=page.locator("div[contenteditable='true'][role='textbox']")
+        )
+        try:
+            if await dialog_with_editor.count() > 0 and await dialog_with_editor.first.is_visible(timeout=300):
+                return dialog_with_editor.first
+        except Exception:
+            pass
     try:
         og = await page.locator("meta[property='og:url']").first.get_attribute("content", timeout=800)
     except Exception:
@@ -408,6 +423,7 @@ COMMENTS_DISABLED_TOKENS = [
 ]
 
 COMMENT_ACTION_SELECTORS = [
+    "div[role='button'][aria-label='Viết bình luận']",
     "div[role='button'][aria-label='Bình luận']",
     "div[role='button'][aria-label='Comment']",
     "div[role='button'][aria-label*='Để lại bình luận']",
@@ -425,16 +441,25 @@ OVERLAY_CLOSE_SELECTORS = [
 
 
 async def dismiss_overlays(page: Any) -> None:
-    """Dong cac popup/dialog che phu (bat thong bao, cookie...) chan click vao o comment.
-    KHONG bam Escape: Escape dong luon composer comment tren trang permalink."""
+    """Dong cac popup/dialog che phu (bat thong bao, cookie...) TREN TRANG HOME.
+    TUYET DOI khong goi tren trang permalink: Facebook hien thi bai viet trong modal
+    co nut 'Đóng' nam ngoai cay DOM chua bai viet, khong the phan biet voi popup that -
+    bam nham se dong bai viet va day ve newsfeed."""
     for selector in OVERLAY_CLOSE_SELECTORS:
         locator = page.locator(selector)
         try:
-            if await locator.count() > 0 and await locator.first.is_visible(timeout=200):
-                await locator.first.click(timeout=1200)
-                await page.wait_for_timeout(400)
+            count = await locator.count()
         except Exception:
             continue
+        for index in range(min(count, 3)):
+            candidate = locator.nth(index)
+            try:
+                if not await candidate.is_visible(timeout=200):
+                    continue
+                await candidate.click(timeout=1200)
+                await page.wait_for_timeout(400)
+            except Exception:
+                continue
 
 
 async def click_comment_action(scope: Any) -> bool:
@@ -450,7 +475,7 @@ async def click_comment_action(scope: Any) -> bool:
             try:
                 if await candidate.is_visible(timeout=200):
                     await candidate.click(timeout=1500)
-                    await page.wait_for_timeout(800)
+                    await scope.page.wait_for_timeout(800)
                     return True
             except Exception:
                 continue
@@ -474,15 +499,28 @@ async def submit_comment(page: Any, editor: Any, text: str) -> bool:
         await editor.scroll_into_view_if_needed(timeout=1500)
     except Exception:
         pass
-    try:
-        await editor.click(timeout=2000)
-    except Exception:
+    clicked = False
+    for _ in range(2):
+        try:
+            await editor.click(timeout=3000)
+            clicked = True
+            break
+        except Exception:
+            await page.wait_for_timeout(500)
+    if not clicked:
+        # Fallback: focus truc tiep bang JS, bo qua kiem tra hit-target cua Playwright
+        # (composer Facebook doi khi bi overlay tam thoi chan click du van go duoc).
+        try:
+            clicked = await editor.evaluate("el => (el.focus(), document.activeElement === el)")
+        except Exception:
+            return False
+    if not clicked:
         return False
     try:
-        await page.keyboard.type(text, delay=40)
+        await page.keyboard.type(text, delay=150)
     except Exception:
         return False
-    await page.wait_for_timeout(300)
+    await page.wait_for_timeout(800)
     try:
         await page.keyboard.press("Enter")
     except Exception:
@@ -492,7 +530,7 @@ async def submit_comment(page: Any, editor: Any, text: str) -> bool:
 
 async def confirm_comment_posted(page: Any, editor: Any, timeout_ms: int = 6000) -> bool:
     """Xac nhan comment da dang: o nhap bi xoa trang hoac bien mat sau khi Enter.
-    (Cach cu tim has-text('.') luon dung vi moi bai viet deu co dau cham.)"""
+    KHONG tim theo noi dung comment: noi dung co the trung voi text co san tren trang."""
     end_at = asyncio.get_event_loop().time() + timeout_ms / 1000.0
     while asyncio.get_event_loop().time() < end_at:
         try:
@@ -512,8 +550,7 @@ async def process_job(page: Any, job: BumpJob, dry_run: bool) -> BumpResult:
     except Exception as exc:
         return BumpResult(job, "error", f"Khong mo duoc link: {exc}")
 
-    await page.wait_for_timeout(1800)
-    await dismiss_overlays(page)
+    await page.wait_for_timeout(3000)
 
     # Bat buoc xac minh trang dang hien dung bai viet muc tieu truoc khi tim o comment,
     # tranh comment nham vao bai dau newsfeed khi trang render loi/bi throttle.
@@ -521,11 +558,17 @@ async def process_job(page: Any, job: BumpJob, dry_run: bool) -> BumpResult:
     post_id = post_id_of(job.post_url)
     article = None
     find_deadline = time.monotonic() + 10.0
+    on_permalink = bool(post_id) and post_id in page.url
     while time.monotonic() < find_deadline:
         article = await find_target_article(page, post_id)
         if article is not None:
             break
-        await scroll_to_comment_area(page)
+        if on_permalink:
+            # Modal permalink tu render, khong can cuon - cuon se keo feed ben duoi modal
+            # va lam mat vi tri bai viet/composer.
+            await page.wait_for_timeout(1000)
+        else:
+            await scroll_to_comment_area(page)
     if article is None:
         return BumpResult(job, "error", "Khong tim thay bai viet tren trang (trang loi hoac bi throttle)")
     # Dua bai viet vao viewport va bat buoc co bounding box hop le truoc khi comment
@@ -568,8 +611,54 @@ async def process_job(page: Any, job: BumpJob, dry_run: bool) -> BumpResult:
 
     confirmed = await confirm_comment_posted(page, editor)
     if confirmed:
-        return BumpResult(job, "commented", "Da comment '.'")
+        return BumpResult(job, "commented", f"Da comment '{COMMENT_TEXT}'")
     return BumpResult(job, "uncertain", "Da bam Enter nhung chua xac nhan duoc comment hien thi")
+
+
+async def bump_worker(
+    worker_id: int,
+    account_id: str,
+    context: Any,
+    options: Any,
+    queue: "asyncio.Queue[tuple[int, int, BumpJob]]",
+    results: list[BumpResult],
+    target_date: str,
+    dry_run: bool,
+    bump_lock: Path,
+    log_lock: asyncio.Lock,
+) -> None:
+    """Moi worker dung 1 tab rieng trong cung context, lay bai tu queue cho den khi het.
+    Giong worker_loop cua scheduler dang bai (asyncio.Queue + 1 page/worker)."""
+    page = await new_page_keep_minimized(context, options)
+    try:
+        try:
+            await page.goto("https://www.facebook.com/", wait_until="domcontentloaded", timeout=45000)
+            await dismiss_overlays(page)
+        except Exception:
+            pass
+        while True:
+            try:
+                position, total, job = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            print(f"[INFO] (tab {worker_id}, {position}/{total}) [{job.source_account}->{account_id}] {job.group_name}")
+            print(f"       {job.post_url}")
+            result = await process_job_with_retry(page, job, dry_run=dry_run)
+            results.append(result)
+            print(f"[RESULT] {result.status}: {result.detail}")
+            if result.status in ("commented", "uncertain", "error", "restricted"):
+                async with log_lock:
+                    append_bump_log(target_date, result)
+            touch_lock(GLOBAL_BUMP_LOCK)
+            touch_lock(bump_lock)
+            queue.task_done()
+            if not queue.empty():
+                await page.wait_for_timeout(COMMENT_DELAY_SECONDS * 1000)
+    finally:
+        try:
+            await page.close()
+        except Exception:
+            pass
 
 
 async def process_job_with_retry(page: Any, job: BumpJob, dry_run: bool) -> BumpResult:
@@ -619,6 +708,9 @@ async def async_main() -> int:
         return 0
 
     pending = list(jobs)
+    if args.skip > 0:
+        pending = pending[args.skip:]
+        print(f"[INFO] --skip {args.skip}: bo qua {min(args.skip, len(jobs))} bai dau tien, con lai {len(pending)} bai")
 
     print(f"[INFO] Ngay xu ly: {target_date}, slot: {slot}")
     print(f"[INFO] Tong link trong log slot {slot}: {len(jobs)}, se comment lai tat ca (khong dedupe)")
@@ -663,19 +755,20 @@ async def async_main() -> int:
         try:
             await page.goto("https://www.facebook.com/", wait_until="domcontentloaded", timeout=45000)
             await ensure_logged_in(page, account_config, "https://www.facebook.com/", options)
+            await dismiss_overlays(page)
 
+            queue: asyncio.Queue[tuple[int, int, BumpJob]] = asyncio.Queue()
+            total = len(account_jobs)
             for position, job in enumerate(account_jobs, start=1):
-                print(f"[INFO] ({position}/{len(account_jobs)}) [{job.source_account}->{account_id}] {job.group_name}")
-                print(f"       {job.post_url}")
-                result = await process_job_with_retry(page, job, dry_run=args.dry_run)
-                results.append(result)
-                print(f"[RESULT] {result.status}: {result.detail}")
-                if result.status in ("commented", "uncertain", "error", "restricted"):
-                    append_bump_log(target_date, result)
-                touch_lock(GLOBAL_BUMP_LOCK)
-                touch_lock(bump_lock)
-                if position < len(account_jobs):
-                    await page.wait_for_timeout(COMMENT_DELAY_SECONDS * 1000)
+                queue.put_nowait((position, total, job))
+            log_lock = asyncio.Lock()
+            worker_count = min(BUMP_WORKERS, total)
+            print(f"[INFO] Chay {worker_count} tab song song cho {total} bai (moi tab van giu nhip {COMMENT_DELAY_SECONDS}s/bai)")
+            await asyncio.gather(*(
+                bump_worker(i + 1, account_id, context, options, queue, results,
+                            target_date, args.dry_run, bump_lock, log_lock)
+                for i in range(worker_count)
+            ))
         finally:
             try:
                 await page.close()
