@@ -1,0 +1,19 @@
+# Danh sach keyword: tin nhan nguoi la chua it nhat 1 keyword thi tool moi tu dong tra loi.
+# Moi dong 1 keyword, khong phan biet hoa thuong / dau tieng Viet ("vang lai" khop "Vãng Lại").
+# So khop theo ranh gioi tu ("1 nam" khong an vao "11 nam").
+# Sua file nay roi khoi dong lai tool de ap dung.
+còn slot
+vãng lai
+đăng kí
+đăng ký
+1 slot
+2 slot
+3 slot
+4 slot
+1 nam
+2 nam
+1 đôi nam nữ
+2 nữ
+3 nam
+3 nữ
+
