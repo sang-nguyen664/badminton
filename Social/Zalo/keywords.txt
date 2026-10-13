@@ -2,10 +2,20 @@
 # Moi dong 1 keyword, khong phan biet hoa thuong / dau tieng Viet ("vang lai" khop "Vãng Lại").
 # So khop theo ranh gioi tu ("1 nam" khong an vao "11 nam").
 # Sua file nay roi khoi dong lai tool de ap dung.
-còn slot
+tuyen vang lai
+tuyển vãng lai
+tuyển vl
+vl
+vang~ lai
 vãng lai
+vảng lai
+vang lai
+dki
+đki
+đkí
 đăng kí
 đăng ký
+còn slot
 1 slot
 2 slot
 3 slot
@@ -16,4 +26,4 @@ vãng lai
 2 nữ
 3 nam
 3 nữ
-
+Tấn Phúc
