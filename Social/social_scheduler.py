@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import json
 import os
+import random
 import re
 import statistics
 import sys
@@ -370,6 +371,9 @@ def build_target_image_map(targets: dict[str, dict[str, Any]]) -> dict[str, str]
     asset_images = list_asset_images()
     if not asset_images:
         return {}
+    # Xao tron thu tu anh moi lan dang bai: tranh gan anh co dinh theo so thu tu trong assets,
+    # moi dot dang moi group nhan mot anh khac nhau giua cac lan chay.
+    random.shuffle(asset_images)
     enabled_target_ids = [target_id for target_id, target in targets.items() if target["enabled"]]
     if not enabled_target_ids:
         return {}
